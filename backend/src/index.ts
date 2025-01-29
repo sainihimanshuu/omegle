@@ -1,7 +1,7 @@
 import http from "http";
 import { Server, Socket } from "socket.io";
 
-//key improvements -
+// key improvements -
 // can improve the adding to queue logic on skipping and disconnection
 
 const httpServer = http.createServer();
@@ -41,15 +41,15 @@ const addEventListener = (socket: Socket) => {
     handleChatMessage(socket, msg);
   });
 
-  socket.on("ice-candidate", (candidate: string) => {
+  socket.on("ice-candidate", (candidate: RTCIceCandidate) => {
     handleIceCandidate(socket, candidate);
   });
 
-  socket.on("offer", (offer: string) => {
+  socket.on("offer", (offer: RTCSessionDescriptionInit) => {
     handleOffer(socket, offer);
   });
 
-  socket.on("answer", (answer: string) => {
+  socket.on("answer", (answer: RTCSessionDescriptionInit) => {
     handleAnswer(socket, answer);
   });
 
@@ -115,8 +115,8 @@ const handleSkip = (socket: Socket) => {
 const handleChatMessage = (socket: Socket, msg: string) => {
   const roomDetails: void | RoomDetails = getRoomDetails(socket);
   if (!roomDetails) return;
-  roomDetails.user1.emit("chat-msg", { msg, sender: socket });
-  roomDetails.user2.emit("chat-msg", { msg, sender: socket });
+  roomDetails.user1.emit("chat-message", { msg, sender: socket });
+  roomDetails.user2.emit("chat-message", { msg, sender: socket });
 };
 
 const getRoomDetails = (socket: Socket): RoomDetails | void => {
@@ -129,7 +129,7 @@ const getRoomDetails = (socket: Socket): RoomDetails | void => {
   return { roomId, room, user1, user2 };
 };
 
-const handleIceCandidate = (socket: Socket, candidate: string) => {
+const handleIceCandidate = (socket: Socket, candidate: RTCIceCandidate) => {
   const roomDetails: void | RoomDetails = getRoomDetails(socket);
   if (!roomDetails) return;
   if (roomDetails.user1 === socket) {
@@ -139,7 +139,7 @@ const handleIceCandidate = (socket: Socket, candidate: string) => {
   }
 };
 
-const handleOffer = (socket: Socket, offer: string) => {
+const handleOffer = (socket: Socket, offer: RTCSessionDescriptionInit) => {
   const roomDetails: void | RoomDetails = getRoomDetails(socket);
   if (!roomDetails) return;
   if (roomDetails.user1 === socket) {
@@ -149,7 +149,7 @@ const handleOffer = (socket: Socket, offer: string) => {
   }
 };
 
-const handleAnswer = (socket: Socket, answer: string) => {
+const handleAnswer = (socket: Socket, answer: RTCSessionDescriptionInit) => {
   const roomDetails: void | RoomDetails = getRoomDetails(socket);
   if (!roomDetails) return;
   if (roomDetails.user1 === socket) {
