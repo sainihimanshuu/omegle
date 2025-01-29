@@ -1,6 +1,9 @@
 import http from "http";
 import { Server, Socket } from "socket.io";
 
+//key improvements -
+// can improve the adding to queue logic on skipping and disconnection
+
 const httpServer = http.createServer();
 const io = new Server(httpServer);
 
@@ -20,7 +23,6 @@ for (let i = 0; i < 100; i++) {
 }
 
 io.on("connection", (socket: Socket) => {
-  queue.push(socket);
   addUser(socket);
 });
 
@@ -41,6 +43,14 @@ const addEventListener = (socket: Socket) => {
 
   socket.on("ice-candidate", (candidate: string) => {
     handleIceCandidate(socket, candidate);
+  });
+
+  socket.on("offer", (offer: string) => {
+    handleOffer(socket, offer);
+  });
+
+  socket.on("answer", (answer: string) => {
+    handleAnswer(socket, answer);
   });
 
   socket.on("disconnect", () => {
@@ -72,15 +82,16 @@ const matchUsers = () => {
     }
     return;
   }
-  if (availableIds.length < 1) return;
+  const roomId: number | undefined = availableIds.shift();
+  if (roomId === undefined) return;
   const newRoom: Room = {
     p1: user1,
     p2: user2,
   };
-  const roomId = availableIds.unshift();
   rooms.set(roomId, newRoom);
   peerToRoom.set(user1, roomId);
   peerToRoom.set(user2, roomId);
+  user1.emit("send-offer");
 };
 
 const handleSkip = (socket: Socket) => {
@@ -125,5 +136,25 @@ const handleIceCandidate = (socket: Socket, candidate: string) => {
     roomDetails.user2.emit("ice-candidate", { candidate });
   } else if (roomDetails.user2 === socket) {
     roomDetails.user1.emit("ice-candidate", { candidate });
+  }
+};
+
+const handleOffer = (socket: Socket, offer: string) => {
+  const roomDetails: void | RoomDetails = getRoomDetails(socket);
+  if (!roomDetails) return;
+  if (roomDetails.user1 === socket) {
+    roomDetails.user2.emit("offer", { offer });
+  } else if (roomDetails.user2 === socket) {
+    roomDetails.user1.emit("offer", { offer });
+  }
+};
+
+const handleAnswer = (socket: Socket, answer: string) => {
+  const roomDetails: void | RoomDetails = getRoomDetails(socket);
+  if (!roomDetails) return;
+  if (roomDetails.user1 === socket) {
+    roomDetails.user2.emit("answer", { answer });
+  } else if (roomDetails.user2 === socket) {
+    roomDetails.user1.emit("answer", { answer });
   }
 };
