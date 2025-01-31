@@ -129,9 +129,11 @@ const handleSkip = (socket: Socket) => {
 const handleChatMessage = (socket: Socket, msg: string) => {
   console.log("hello from msg");
   const roomDetails: void | RoomDetails = getRoomDetails(socket);
+  console.log("hello after room details");
   if (!roomDetails) return;
-  roomDetails.user1.emit("chat-message", { msg, sender: socket });
-  roomDetails.user2.emit("chat-message", { msg, sender: socket });
+  roomDetails.user1.emit("chat-message", { msg, sender: socket.id });
+  roomDetails.user2.emit("chat-message", { msg, sender: socket.id });
+  console.log("msg sent to both");
 };
 
 const getRoomDetails = (socket: Socket): RoomDetails | void => {

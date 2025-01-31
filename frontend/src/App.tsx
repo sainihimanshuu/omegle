@@ -7,7 +7,9 @@ function App() {
   const [start, setStart] = useState<boolean>(false);
 
   return (
-    <div>{start ? <ChatArea /> : <LandingPage setStart={setStart} />}</div>
+    <div className="h-full">
+      {start ? <ChatArea /> : <LandingPage setStart={setStart} />}
+    </div>
   );
 }
 

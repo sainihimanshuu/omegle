@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 
 type Chat = {
@@ -42,7 +42,7 @@ const ChatArea = () => {
   //     });
   // }, []);
 
-  const getUserMedia = async () => {
+  const getUserMedia = useCallback(async () => {
     try {
       console.log("Requesting media stream...");
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -57,12 +57,13 @@ const ChatArea = () => {
     } catch (error) {
       console.error("Failed to get media stream:", error);
     }
-  };
+  }, []);
 
   //setup websocket connection
   //get user media
   //setup webrtc connection
   useEffect(() => {
+    //getUserMedia();
     const socket = io("http://localhost:8080");
     setSocket(socket);
 
@@ -202,10 +203,11 @@ const ChatArea = () => {
 
     socket.on(
       "chat-message",
-      ({ msg, sender }: { msg: string; sender: Socket }) => {
+      ({ msg, sender }: { msg: string; sender: string }) => {
+        console.log("chat msg received");
         setChats((prevChats) => [
           ...prevChats,
-          { message: msg, sender: sender.id ?? "unknown" },
+          { message: msg, sender: sender ?? "unknown" },
         ]);
       }
     );
@@ -228,28 +230,64 @@ const ChatArea = () => {
   // }, [connection]);
 
   const handleSendMsg = () => {
+    console.log("inside handle send msg");
+    console.log(socket?.id);
     socket?.emit("chat-message", message);
     setMessage("");
+    console.log("message sent");
   };
 
   return (
-    <div>
-      <div className="flex-col justify-center">
-        <video ref={myVideoRef} autoPlay playsInline />
-        <video ref={otherVideoRef} autoPlay playsInline />
+    <div className="flex px-10 pt-6 h-[530px]  font-josfin">
+      <div className="w-2/5 flex-col justify-center">
+        <video
+          className="h-64 rounded-t-lg mb-1"
+          ref={myVideoRef}
+          autoPlay
+          playsInline
+        />
+        <video
+          className="h-64 rounded-b-lg mt-1"
+          ref={otherVideoRef}
+          autoPlay
+          playsInline
+        />
       </div>
-      <div>
-        <div className="flex-col">
-          {chats.map((chat) => {
-            return <li>{chat.message}</li>;
-          })}
+      <div className="w-3/5 flex flex-col ml-2 h-full">
+        <div className="flex-1 overflow-y-auto mb-4">
+          {chats.length === 0 ? (
+            <h1>Send a message</h1>
+          ) : (
+            chats.map((chat) => {
+              return (
+                <div className="flex justify-start">
+                  <h3 className="font-bold">
+                    {chat.sender === socket?.id ? "You:" : "Stranger:"}
+                  </h3>
+                  <h3 className="ml-1 font-normal">{chat.message}</h3>
+                </div>
+              );
+            })
+          )}
         </div>
-        <div>
-          <input
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder="type"
-          ></input>
-          <button onClick={handleSendMsg}>send</button>
+        <div className="flex flex-row w-full">
+          <button className="bg-black text-white font-semibold w-16 rounded-sm mr-1">
+            skip
+          </button>
+          <div className="flex-1 border-2 border-black rounded-sm">
+            <input
+              className="w-full p-3"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="type..."
+            ></input>
+          </div>
+          <button
+            className="bg-black text-white font-semibold w-16 rounded-sm ml-1"
+            onClick={handleSendMsg}
+          >
+            send
+          </button>
         </div>
       </div>
     </div>

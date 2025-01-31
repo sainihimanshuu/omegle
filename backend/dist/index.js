@@ -116,10 +116,12 @@ const handleSkip = (socket) => {
 const handleChatMessage = (socket, msg) => {
     console.log("hello from msg");
     const roomDetails = getRoomDetails(socket);
+    console.log("hello after room details");
     if (!roomDetails)
         return;
-    roomDetails.user1.emit("chat-message", { msg, sender: socket });
-    roomDetails.user2.emit("chat-message", { msg, sender: socket });
+    roomDetails.user1.emit("chat-message", { msg, sender: socket.id });
+    roomDetails.user2.emit("chat-message", { msg, sender: socket.id });
+    console.log("msg sent to both");
 };
 const getRoomDetails = (socket) => {
     const roomId = peerToRoom.get(socket);
