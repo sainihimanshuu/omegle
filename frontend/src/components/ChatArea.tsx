@@ -11,34 +11,53 @@ const ChatArea = () => {
   // const [myVideo, setMyVideo] = useState<MediaStreamTrack | null>(null);
   // const [myAudio, setMyAudio] = useState<MediaStreamTrack | null>(null);
   const myStream = useRef<MediaStream | null>(null);
-  const [, setOtherVideo] = useState<MediaStreamTrack | null>(null);
-  const [, setOtherAudio] = useState<MediaStreamTrack | null>(null);
+  // const [, setOtherVideo] = useState<MediaStreamTrack | null>(null);
+  // const [, setOtherAudio] = useState<MediaStreamTrack | null>(null);
   const [connection, setConnection] = useState<RTCPeerConnection | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [message, setMessage] = useState<string>("");
   const myVideoRef = useRef<HTMLVideoElement>(null);
   const otherVideoRef = useRef<HTMLVideoElement>(null);
 
-  useEffect(() => {
-    navigator.mediaDevices
-      .getUserMedia({ audio: true, video: true })
-      // .then((stream) => {
-      //   const audio = stream.getAudioTracks()[0];
-      //   const video = stream.getVideoTracks()[0];
-      //   setMyVideo(video);
-      //   setMyAudio(audio);
-      //   if (myVideoRef.current) {
-      //     myVideoRef.current.srcObject = new MediaStream([video]);
-      //     myVideoRef.current.play();
-      //   }
-      // });
-      .then((stream) => {
-        myStream.current = stream;
-        if (myVideoRef.current) {
-          myVideoRef.current.srcObject = stream;
-        }
+  // useEffect(() => {
+  //   navigator.mediaDevices
+  //     .getUserMedia({ audio: true, video: true })
+  //     // .then((stream) => {
+  //     //   const audio = stream.getAudioTracks()[0];
+  //     //   const video = stream.getVideoTracks()[0];
+  //     //   setMyVideo(video);
+  //     //   setMyAudio(audio);
+  //     //   if (myVideoRef.current) {
+  //     //     myVideoRef.current.srcObject = new MediaStream([video]);
+  //     //     myVideoRef.current.play();
+  //     //   }
+  //     // });
+  //     .then((stream) => {
+  //       console.log("adding stream");
+  //       myStream.current = stream;
+  //       console.log("stream added");
+  //       if (myVideoRef.current) {
+  //         myVideoRef.current.srcObject = stream;
+  //       }
+  //     });
+  // }, []);
+
+  const getUserMedia = async () => {
+    try {
+      console.log("Requesting media stream...");
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: true,
       });
-  }, []);
+      console.log("Stream acquired");
+      myStream.current = stream;
+      if (myVideoRef.current) {
+        myVideoRef.current.srcObject = stream;
+      }
+    } catch (error) {
+      console.error("Failed to get media stream:", error);
+    }
+  };
 
   //setup websocket connection
   //get user media
@@ -48,6 +67,7 @@ const ChatArea = () => {
     setSocket(socket);
 
     socket.on("send-offer", async () => {
+      await getUserMedia();
       console.log("send-offer received by user1");
       const pc = new RTCPeerConnection({
         iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -61,6 +81,7 @@ const ChatArea = () => {
       //   console.log("video added");
       //   pc.addTrack(myVideo);
       // }
+      console.log("after getUserMedia", myStream.current);
       if (myStream.current) {
         myStream.current.getTracks().forEach((track) => {
           console.log(`Adding track: ${track.kind}`);
@@ -81,15 +102,18 @@ const ChatArea = () => {
         }
       };
 
+      console.log("pc before add track", pc);
       pc.ontrack = ({ track }) => {
+        console.log("inside on track user 1");
+        if (otherVideoRef.current && !otherVideoRef.current.srcObject) {
+          otherVideoRef.current.srcObject = new MediaStream();
+        }
         if (track.kind === "audio") {
-          setOtherAudio(track);
-          if (otherVideoRef.current?.srcObject) {
-            //@ts-ignore
-            otherVideoRef.current.srcObject.addTrack(track);
-          }
+          //setOtherAudio(track);
+          //@ts-ignore
+          otherVideoRef.current.srcObject.addTrack(track);
         } else {
-          setOtherVideo(track);
+          //setOtherVideo(track);
           //@ts-ignore
           otherVideoRef.current.srcObject.addTrack(track);
         }
@@ -99,10 +123,39 @@ const ChatArea = () => {
     });
 
     socket.on("offer", async ({ offer }) => {
+      await getUserMedia();
+
       console.log("offer received by user2");
       const pc = new RTCPeerConnection({
         iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
       });
+      console.log("above add stream user2");
+      console.log("my stream", myStream.current);
+      if (myStream.current) {
+        console.log("inside add stream user2");
+        myStream.current.getTracks().forEach((track) => {
+          console.log(`Adding track: ${track.kind}`);
+          pc.addTrack(track, myStream.current!);
+        });
+      }
+
+      console.log("before on track user 2");
+      pc.ontrack = ({ track }) => {
+        console.log("inside on track user 2");
+        if (otherVideoRef.current && !otherVideoRef.current.srcObject) {
+          otherVideoRef.current.srcObject = new MediaStream();
+        }
+        if (track.kind === "audio") {
+          //setOtherAudio(track);
+          //@ts-ignore
+          otherVideoRef.current.srcObject.addTrack(track);
+        } else {
+          //setOtherVideo(track);
+          //@ts-ignore
+          otherVideoRef.current.srcObject.addTrack(track);
+        }
+      };
+
       await pc.setRemoteDescription(offer);
       console.log("remote set");
       const answer = await pc.createAnswer();
@@ -117,31 +170,10 @@ const ChatArea = () => {
       //   pc.addTrack(myVideo);
       // }
 
-      if (myStream.current) {
-        myStream.current.getTracks().forEach((track) => {
-          console.log(`Adding track: ${track.kind}`);
-          pc.addTrack(track, myStream.current!);
-        });
-      }
-
       pc.onicecandidate = ({ candidate }) => {
         console.log("ICE candidate received:", candidate);
         if (candidate) {
           socket.emit("ice-candidate", { candidate });
-        }
-      };
-
-      pc.ontrack = ({ track }) => {
-        if (track.kind === "audio") {
-          setOtherAudio(track);
-          if (otherVideoRef.current?.srcObject) {
-            //@ts-ignore
-            otherVideoRef.current.srcObject.addTrack(track);
-          }
-        } else {
-          setOtherVideo(track);
-          //@ts-ignore
-          otherVideoRef.current.srcObject.addTrack(track);
         }
       };
 
