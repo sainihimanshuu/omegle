@@ -95,23 +95,32 @@ const matchUsers = () => {
     console.log("send-offer sent to user1");
 };
 const handleSkip = (socket) => {
+    console.log("skip received");
     const roomDetails = getRoomDetails(socket);
     if (!roomDetails)
         return;
+    console.log("room found");
     //the one who skipped to the end of queue
     if (roomDetails.user1 === socket) {
         queue.push(roomDetails.user1);
         queue.unshift(roomDetails.user2);
+        console.log("user1 pushed to last");
     }
     else if (roomDetails.user2 === socket) {
         queue.push(roomDetails.user2);
         queue.unshift(roomDetails.user1);
+        console.log("user2 pushed to last");
     }
     //now the room does not exist
     availableIds.push(roomDetails.roomId);
+    console.log("id freed");
     peerToRoom.delete(roomDetails.user1);
+    console.log("user 1 removed");
     peerToRoom.delete(roomDetails.user2);
+    console.log("user2 removed");
     rooms.delete(roomDetails.roomId);
+    console.log("room deleted");
+    matchUsers();
 };
 const handleChatMessage = (socket, msg) => {
     console.log("hello from msg");

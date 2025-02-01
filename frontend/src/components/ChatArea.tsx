@@ -8,39 +8,13 @@ type Chat = {
 
 const ChatArea = () => {
   const [chats, setChats] = useState<Chat[]>([]);
-  // const [myVideo, setMyVideo] = useState<MediaStreamTrack | null>(null);
-  // const [myAudio, setMyAudio] = useState<MediaStreamTrack | null>(null);
   const myStream = useRef<MediaStream | null>(null);
-  // const [, setOtherVideo] = useState<MediaStreamTrack | null>(null);
-  // const [, setOtherAudio] = useState<MediaStreamTrack | null>(null);
-  const [connection, setConnection] = useState<RTCPeerConnection | null>(null);
-  const [socket, setSocket] = useState<Socket | null>(null);
+  const connection = useRef<RTCPeerConnection | null>(null);
+  const socketRef = useRef<Socket | null>(null);
   const [message, setMessage] = useState<string>("");
   const myVideoRef = useRef<HTMLVideoElement>(null);
   const otherVideoRef = useRef<HTMLVideoElement>(null);
-
-  // useEffect(() => {
-  //   navigator.mediaDevices
-  //     .getUserMedia({ audio: true, video: true })
-  //     // .then((stream) => {
-  //     //   const audio = stream.getAudioTracks()[0];
-  //     //   const video = stream.getVideoTracks()[0];
-  //     //   setMyVideo(video);
-  //     //   setMyAudio(audio);
-  //     //   if (myVideoRef.current) {
-  //     //     myVideoRef.current.srcObject = new MediaStream([video]);
-  //     //     myVideoRef.current.play();
-  //     //   }
-  //     // });
-  //     .then((stream) => {
-  //       console.log("adding stream");
-  //       myStream.current = stream;
-  //       console.log("stream added");
-  //       if (myVideoRef.current) {
-  //         myVideoRef.current.srcObject = stream;
-  //       }
-  //     });
-  // }, []);
+  const currentOffer = useRef<any>(null);
 
   const getUserMedia = useCallback(async () => {
     try {
@@ -54,34 +28,28 @@ const ChatArea = () => {
       if (myVideoRef.current) {
         myVideoRef.current.srcObject = stream;
       }
+      if (currentOffer.current) {
+        const offer = currentOffer.current;
+        currentOffer.current = null;
+        await handleOffer(offer);
+      }
     } catch (error) {
       console.error("Failed to get media stream:", error);
     }
   }, []);
 
-  //setup websocket connection
-  //get user media
-  //setup webrtc connection
   useEffect(() => {
-    //getUserMedia();
+    getUserMedia();
     const socket = io("http://localhost:8080");
-    setSocket(socket);
+    socketRef.current = socket;
 
     socket.on("send-offer", async () => {
-      await getUserMedia();
+      cleanUp();
       console.log("send-offer received by user1");
       const pc = new RTCPeerConnection({
         iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
       });
 
-      // if (myAudio) {
-      //   console.log("audio added");
-      //   pc.addTrack(myAudio);
-      // }
-      // if (myVideo) {
-      //   console.log("video added");
-      //   pc.addTrack(myVideo);
-      // }
       console.log("after getUserMedia", myStream.current);
       if (myStream.current) {
         myStream.current.getTracks().forEach((track) => {
@@ -89,12 +57,11 @@ const ChatArea = () => {
           pc.addTrack(track, myStream.current!);
         });
       }
-      // pc.onnegotiationneeded = async () => {
+
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       socket.emit("offer", { offer });
       console.log("offer sent to user2");
-      // };
 
       pc.onicecandidate = ({ candidate }) => {
         console.log("ICE candidate received:", candidate);
@@ -107,98 +74,48 @@ const ChatArea = () => {
       pc.ontrack = ({ track }) => {
         console.log("inside on track user 1");
         if (otherVideoRef.current && !otherVideoRef.current.srcObject) {
+          console.log("new mediastream user1");
           otherVideoRef.current.srcObject = new MediaStream();
         }
         if (track.kind === "audio") {
-          //setOtherAudio(track);
+          console.log(track.label);
           //@ts-ignore
           otherVideoRef.current.srcObject.addTrack(track);
+          console.log("remote audio added");
         } else {
-          //setOtherVideo(track);
+          console.log(track.label);
           //@ts-ignore
           otherVideoRef.current.srcObject.addTrack(track);
+          console.log("remote video added");
         }
+        console.log("Video element:", otherVideoRef.current);
+        console.log("Video srcObject:", otherVideoRef.current?.srcObject);
+        const mediaStream = otherVideoRef.current
+          ?.srcObject as MediaStream | null;
+        console.log("Video tracks:", mediaStream?.getTracks());
       };
 
-      setConnection(pc);
+      connection.current = pc;
     });
 
     socket.on("offer", async ({ offer }) => {
-      await getUserMedia();
-
-      console.log("offer received by user2");
-      const pc = new RTCPeerConnection({
-        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-      });
-      console.log("above add stream user2");
-      console.log("my stream", myStream.current);
-      if (myStream.current) {
-        console.log("inside add stream user2");
-        myStream.current.getTracks().forEach((track) => {
-          console.log(`Adding track: ${track.kind}`);
-          pc.addTrack(track, myStream.current!);
-        });
+      cleanUp();
+      if (!myStream.current) {
+        currentOffer.current = offer;
+        return;
       }
 
-      console.log("before on track user 2");
-      pc.ontrack = ({ track }) => {
-        console.log("inside on track user 2");
-        if (otherVideoRef.current && !otherVideoRef.current.srcObject) {
-          otherVideoRef.current.srcObject = new MediaStream();
-        }
-        if (track.kind === "audio") {
-          //setOtherAudio(track);
-          //@ts-ignore
-          otherVideoRef.current.srcObject.addTrack(track);
-        } else {
-          //setOtherVideo(track);
-          //@ts-ignore
-          otherVideoRef.current.srcObject.addTrack(track);
-        }
-      };
-
-      await pc.setRemoteDescription(offer);
-      console.log("remote set");
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-
-      // if (myAudio) {
-      //   console.log("audio added");
-      //   pc.addTrack(myAudio);
-      // }
-      // if (myVideo) {
-      //   console.log("video added");
-      //   pc.addTrack(myVideo);
-      // }
-
-      pc.onicecandidate = ({ candidate }) => {
-        console.log("ICE candidate received:", candidate);
-        if (candidate) {
-          socket.emit("ice-candidate", { candidate });
-        }
-      };
-
-      setConnection(pc);
-      socket.emit("answer", { answer });
+      await handleOffer(offer);
     });
 
     socket.on("answer", ({ answer }) => {
       console.log("answer received by user1");
-      setConnection((connection) => {
-        console.log("Current signaling state:", connection?.signalingState);
-        connection?.setRemoteDescription(answer).then(() => {
-          console.log("remote set");
-        });
-        return connection;
-      });
+      connection.current?.setRemoteDescription(answer);
     });
 
     socket.on("ice-candidate", ({ candidate }) => {
       console.log("received-ice");
-      setConnection((connection) => {
-        connection?.addIceCandidate(candidate);
-        return connection;
-      });
+      connection.current?.addIceCandidate(candidate);
     });
 
     socket.on(
@@ -214,27 +131,98 @@ const ChatArea = () => {
 
     return () => {
       socket.disconnect();
-      connection?.close();
+      connection.current?.close();
     };
   }, []);
 
-  // useEffect(() => {
-  //   if (!connection) return;
+  const handleOffer = async (offer: any) => {
+    console.log("offer received by user2");
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+    });
+    console.log("above add stream user2");
+    console.log("my stream", myStream.current);
+    if (myStream.current) {
+      console.log("inside add stream user2");
+      myStream.current.getTracks().forEach((track) => {
+        console.log(`Adding track: ${track.kind}`);
+        pc.addTrack(track, myStream.current!);
+      });
+    }
 
-  //   const interval = setInterval(() => {
-  //     console.log("ICE Connection State:", connection.iceConnectionState);
-  //     console.log("Signaling State:", connection.signalingState);
-  //   }, 2000);
+    console.log("before on track user 2");
+    pc.ontrack = ({ track }) => {
+      console.log("inside on track user 2");
+      if (otherVideoRef.current && !otherVideoRef.current.srcObject) {
+        console.log("new mediastream user2");
+        otherVideoRef.current.srcObject = new MediaStream();
+      }
+      if (track.kind === "audio") {
+        //@ts-ignore
+        otherVideoRef.current.srcObject.addTrack(track);
+        console.log("remote audio added");
+      } else {
+        //@ts-ignore
+        otherVideoRef.current.srcObject.addTrack(track);
+        console.log("remote video added");
+      }
+    };
 
-  //   return () => clearInterval(interval);
-  // }, [connection]);
+    await pc.setRemoteDescription(offer);
+    console.log("remote set");
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+
+    pc.onicecandidate = ({ candidate }) => {
+      console.log("ICE candidate received:", candidate);
+      if (candidate) {
+        socketRef.current?.emit("ice-candidate", { candidate });
+      }
+    };
+
+    connection.current = pc;
+    socketRef.current?.emit("answer", { answer });
+  };
+
+  //free up connection to establish a new connection
+  const cleanUp = () => {
+    if (connection.current) {
+      console.log("old conenction found");
+      connection.current.onicecandidate = null;
+      connection.current.ontrack = null;
+      connection.current.onconnectionstatechange = null;
+      connection.current.close();
+      console.log("after connection close");
+      connection.current = null;
+    }
+
+    const mediaStream = otherVideoRef.current?.srcObject as MediaStream | null;
+    console.log(
+      "Video tracks inside cleanup before:",
+      mediaStream?.getTracks()
+    );
+
+    mediaStream?.getTracks().forEach((track) => {
+      track.stop();
+      mediaStream?.removeTrack(track);
+    });
+    console.log("Video tracks inside cleanup after:", mediaStream?.getTracks());
+
+    setChats([]);
+    setMessage("");
+  };
 
   const handleSendMsg = () => {
     console.log("inside handle send msg");
-    console.log(socket?.id);
-    socket?.emit("chat-message", message);
+    console.log(socketRef.current?.id);
+    socketRef.current?.emit("chat-message", message);
     setMessage("");
     console.log("message sent");
+  };
+
+  const handleSkip = () => {
+    console.log("clicked skip");
+    socketRef.current?.emit("skip");
   };
 
   return (
@@ -262,7 +250,9 @@ const ChatArea = () => {
               return (
                 <div className="flex justify-start">
                   <h3 className="font-bold">
-                    {chat.sender === socket?.id ? "You:" : "Stranger:"}
+                    {chat.sender === socketRef.current?.id
+                      ? "You:"
+                      : "Stranger:"}
                   </h3>
                   <h3 className="ml-1 font-normal">{chat.message}</h3>
                 </div>
@@ -271,7 +261,10 @@ const ChatArea = () => {
           )}
         </div>
         <div className="flex flex-row w-full">
-          <button className="bg-black text-white font-semibold w-16 rounded-sm mr-1">
+          <button
+            className="bg-black text-white font-semibold w-16 rounded-sm mr-1"
+            onClick={handleSkip}
+          >
             skip
           </button>
           <div className="flex-1 border-2 border-black rounded-sm">
