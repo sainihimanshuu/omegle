@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
+const loading = "/loading.mp4";
 
 type Chat = {
   message: string;
@@ -15,18 +16,19 @@ const ChatArea = () => {
   const myVideoRef = useRef<HTMLVideoElement>(null);
   const otherVideoRef = useRef<HTMLVideoElement>(null);
   const currentOffer = useRef<any>(null);
+  const [audioEnabled, setAudioEnabled] = useState<boolean>(true);
 
   const getUserMedia = useCallback(async () => {
     try {
-      console.log("Requesting media stream...");
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
         video: true,
       });
-      console.log("Stream acquired");
       myStream.current = stream;
       if (myVideoRef.current) {
-        myVideoRef.current.srcObject = stream;
+        const onlyVideoStream = new MediaStream();
+        onlyVideoStream.addTrack(stream.getVideoTracks()[0]);
+        myVideoRef.current.srcObject = onlyVideoStream;
       }
       if (currentOffer.current) {
         const offer = currentOffer.current;
@@ -39,21 +41,18 @@ const ChatArea = () => {
   }, []);
 
   useEffect(() => {
+    otherVideoRef.current!.src = loading;
     getUserMedia();
     const socket = io("http://localhost:8080");
     socketRef.current = socket;
 
     socket.on("send-offer", async () => {
-      cleanUp();
-      console.log("send-offer received by user1");
       const pc = new RTCPeerConnection({
         iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
       });
 
-      console.log("after getUserMedia", myStream.current);
       if (myStream.current) {
         myStream.current.getTracks().forEach((track) => {
-          console.log(`Adding track: ${track.kind}`);
           pc.addTrack(track, myStream.current!);
         });
       }
@@ -61,45 +60,30 @@ const ChatArea = () => {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       socket.emit("offer", { offer });
-      console.log("offer sent to user2");
 
       pc.onicecandidate = ({ candidate }) => {
-        console.log("ICE candidate received:", candidate);
         if (candidate) {
           socket.emit("ice-candidate", { candidate });
         }
       };
 
-      console.log("pc before add track", pc);
       pc.ontrack = ({ track }) => {
-        console.log("inside on track user 1");
         if (otherVideoRef.current && !otherVideoRef.current.srcObject) {
-          console.log("new mediastream user1");
           otherVideoRef.current.srcObject = new MediaStream();
         }
         if (track.kind === "audio") {
-          console.log(track.label);
           //@ts-ignore
           otherVideoRef.current.srcObject.addTrack(track);
-          console.log("remote audio added");
         } else {
-          console.log(track.label);
           //@ts-ignore
           otherVideoRef.current.srcObject.addTrack(track);
-          console.log("remote video added");
         }
-        console.log("Video element:", otherVideoRef.current);
-        console.log("Video srcObject:", otherVideoRef.current?.srcObject);
-        const mediaStream = otherVideoRef.current
-          ?.srcObject as MediaStream | null;
-        console.log("Video tracks:", mediaStream?.getTracks());
       };
 
       connection.current = pc;
     });
 
     socket.on("offer", async ({ offer }) => {
-      cleanUp();
       if (!myStream.current) {
         currentOffer.current = offer;
         return;
@@ -109,25 +93,26 @@ const ChatArea = () => {
     });
 
     socket.on("answer", ({ answer }) => {
-      console.log("answer received by user1");
       connection.current?.setRemoteDescription(answer);
     });
 
     socket.on("ice-candidate", ({ candidate }) => {
-      console.log("received-ice");
       connection.current?.addIceCandidate(candidate);
     });
 
     socket.on(
       "chat-message",
       ({ msg, sender }: { msg: string; sender: string }) => {
-        console.log("chat msg received");
         setChats((prevChats) => [
           ...prevChats,
           { message: msg, sender: sender ?? "unknown" },
         ]);
       }
     );
+
+    socket.on("pushed-to-queue", () => {
+      cleanUp();
+    });
 
     return () => {
       socket.disconnect();
@@ -136,45 +121,33 @@ const ChatArea = () => {
   }, []);
 
   const handleOffer = async (offer: any) => {
-    console.log("offer received by user2");
     const pc = new RTCPeerConnection({
       iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
     });
-    console.log("above add stream user2");
-    console.log("my stream", myStream.current);
     if (myStream.current) {
-      console.log("inside add stream user2");
       myStream.current.getTracks().forEach((track) => {
-        console.log(`Adding track: ${track.kind}`);
         pc.addTrack(track, myStream.current!);
       });
     }
 
-    console.log("before on track user 2");
     pc.ontrack = ({ track }) => {
-      console.log("inside on track user 2");
       if (otherVideoRef.current && !otherVideoRef.current.srcObject) {
-        console.log("new mediastream user2");
         otherVideoRef.current.srcObject = new MediaStream();
       }
       if (track.kind === "audio") {
         //@ts-ignore
         otherVideoRef.current.srcObject.addTrack(track);
-        console.log("remote audio added");
       } else {
         //@ts-ignore
         otherVideoRef.current.srcObject.addTrack(track);
-        console.log("remote video added");
       }
     };
 
     await pc.setRemoteDescription(offer);
-    console.log("remote set");
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
 
     pc.onicecandidate = ({ candidate }) => {
-      console.log("ICE candidate received:", candidate);
       if (candidate) {
         socketRef.current?.emit("ice-candidate", { candidate });
       }
@@ -187,58 +160,58 @@ const ChatArea = () => {
   //free up connection to establish a new connection
   const cleanUp = () => {
     if (connection.current) {
-      console.log("old conenction found");
       connection.current.onicecandidate = null;
       connection.current.ontrack = null;
       connection.current.onconnectionstatechange = null;
       connection.current.close();
-      console.log("after connection close");
       connection.current = null;
     }
 
     const mediaStream = otherVideoRef.current?.srcObject as MediaStream | null;
-    console.log(
-      "Video tracks inside cleanup before:",
-      mediaStream?.getTracks()
-    );
 
     mediaStream?.getTracks().forEach((track) => {
       track.stop();
       mediaStream?.removeTrack(track);
     });
-    console.log("Video tracks inside cleanup after:", mediaStream?.getTracks());
+    otherVideoRef.current!.srcObject = null;
+    otherVideoRef.current!.src = loading;
 
     setChats([]);
     setMessage("");
   };
 
   const handleSendMsg = () => {
-    console.log("inside handle send msg");
-    console.log(socketRef.current?.id);
     socketRef.current?.emit("chat-message", message);
     setMessage("");
-    console.log("message sent");
   };
 
   const handleSkip = () => {
-    console.log("clicked skip");
     socketRef.current?.emit("skip");
+  };
+
+  const toggleMute = () => {
+    const audioTrack = myStream.current?.getAudioTracks()[0];
+    if (audioTrack) {
+      audioTrack.enabled = !audioTrack.enabled;
+      setAudioEnabled(audioTrack.enabled);
+    }
   };
 
   return (
     <div className="flex px-10 pt-6 h-[530px]  font-josfin">
       <div className="w-2/5 flex-col justify-center">
         <video
-          className="h-64 rounded-t-lg mb-1"
+          className="w-full h-64 rounded-t-lg mb-1 object-fill"
           ref={myVideoRef}
           autoPlay
           playsInline
         />
         <video
-          className="h-64 rounded-b-lg mt-1"
+          className="w-full h-64 rounded-b-lg mt-1 object-fill"
           ref={otherVideoRef}
           autoPlay
           playsInline
+          loop
         />
       </div>
       <div className="w-3/5 flex flex-col ml-2 h-full">
@@ -261,6 +234,12 @@ const ChatArea = () => {
           )}
         </div>
         <div className="flex flex-row w-full">
+          <button
+            className="bg-black text-white font-semibold w-16 rounded-sm mr-1"
+            onClick={toggleMute}
+          >
+            {audioEnabled ? "mute" : "unmute"}
+          </button>
           <button
             className="bg-black text-white font-semibold w-16 rounded-sm mr-1"
             onClick={handleSkip}

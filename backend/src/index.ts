@@ -32,7 +32,6 @@ io.on("connection", (socket: Socket) => {
 
 const addUser = (socket: Socket) => {
   queue.push(socket);
-  console.log("new user pushed in queue");
   addEventListener(socket);
   matchUsers();
 };
@@ -63,20 +62,20 @@ const addEventListener = (socket: Socket) => {
     if (!roomDetails) {
       //handle the case where on disconnection, user was in queue
       queue = queue.filter((user) => user !== socket);
-      console.log("queue size now", queue.length);
       return;
     }
     if (roomDetails.user1 === socket) {
       queue.unshift(roomDetails.user2);
+      roomDetails.user2.emit("pushed-to-queue");
     }
     if (roomDetails.user2 === socket) {
+      roomDetails.user1.emit("pushed-to-queue");
       queue.unshift(roomDetails.user1);
     }
     peerToRoom.delete(roomDetails.user1);
     peerToRoom.delete(roomDetails.user2);
     rooms.delete(roomDetails.roomId);
     availableIds.push(roomDetails.roomId);
-    console.log("queue size now", queue.length);
   });
 };
 
@@ -103,46 +102,35 @@ const matchUsers = () => {
   rooms.set(roomId, newRoom);
   peerToRoom.set(user1, roomId);
   peerToRoom.set(user2, roomId);
-  console.log("room created");
   user1.emit("send-offer");
-  console.log("send-offer sent to user1");
 };
 
 const handleSkip = (socket: Socket) => {
-  console.log("skip received");
   const roomDetails: void | RoomDetails = getRoomDetails(socket);
   if (!roomDetails) return;
-  console.log("room found");
   //the one who skipped to the end of queue
   if (roomDetails.user1 === socket) {
     queue.push(roomDetails.user1);
     queue.unshift(roomDetails.user2);
-    console.log("user1 pushed to last");
   } else if (roomDetails.user2 === socket) {
     queue.push(roomDetails.user2);
     queue.unshift(roomDetails.user1);
-    console.log("user2 pushed to last");
   }
+  roomDetails.user1.emit("pushed-to-queue");
+  roomDetails.user2.emit("pushed-to-queue");
   //now the room does not exist
   availableIds.push(roomDetails.roomId);
-  console.log("id freed");
   peerToRoom.delete(roomDetails.user1);
-  console.log("user 1 removed");
   peerToRoom.delete(roomDetails.user2);
-  console.log("user2 removed");
   rooms.delete(roomDetails.roomId);
-  console.log("room deleted");
   matchUsers();
 };
 
 const handleChatMessage = (socket: Socket, msg: string) => {
-  console.log("hello from msg");
   const roomDetails: void | RoomDetails = getRoomDetails(socket);
-  console.log("hello after room details");
   if (!roomDetails) return;
   roomDetails.user1.emit("chat-message", { msg, sender: socket.id });
   roomDetails.user2.emit("chat-message", { msg, sender: socket.id });
-  console.log("msg sent to both");
 };
 
 const getRoomDetails = (socket: Socket): RoomDetails | void => {
@@ -169,10 +157,8 @@ const handleOffer = (socket: Socket, offer: string) => {
   const roomDetails: void | RoomDetails = getRoomDetails(socket);
   if (!roomDetails) return;
   if (roomDetails.user1 === socket) {
-    console.log("offer forwarded");
     roomDetails.user2.emit("offer", offer);
   } else if (roomDetails.user2 === socket) {
-    console.log("offer forwarded");
     roomDetails.user1.emit("offer", offer);
   }
 };
@@ -181,10 +167,8 @@ const handleAnswer = (socket: Socket, answer: RTCSessionDescriptionInit) => {
   const roomDetails: void | RoomDetails = getRoomDetails(socket);
   if (!roomDetails) return;
   if (roomDetails.user1 === socket) {
-    console.log("answer forwarded");
     roomDetails.user2.emit("answer", answer);
   } else if (roomDetails.user2 === socket) {
-    console.log("answer forwarded");
     roomDetails.user1.emit("answer", answer);
   }
 };
